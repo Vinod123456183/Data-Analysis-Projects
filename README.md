@@ -1,4 +1,4 @@
-![Main](image-url-or-path)
+![Main](Main.png)
 
 
 ## 1️⃣ Sales Performance Dashboard (FY 2025)
