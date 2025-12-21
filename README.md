@@ -1,4 +1,4 @@
-![Main](Main.png)
+![Main](1__Swiggy_Excel_Analysis_/Main.png)
 
 
 ## 1️⃣ Sales Performance Dashboard (FY 2025)
