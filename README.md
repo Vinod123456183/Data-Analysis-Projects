@@ -1,7 +1,7 @@
 ![Main](1__Swiggy_Excel_Analysis_/Main.png)
 
 
-## 1️⃣ Sales Performance Dashboard (FY 2025)
+## 1️⃣ Sales Performance Dashboard (FY-2025)
 
 ### 🎯 Purpose
 Track sales growth, regional contribution, and product performance.
