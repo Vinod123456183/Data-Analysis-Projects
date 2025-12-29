@@ -1,0 +1,4 @@
+Sheets("Retail Store Sales").Select
+Dim lastRow As Long
+lastRow = Sheets("Retail Store Sales").Cells(Rows.Count, "A").End(xlUp).Row + 1
+Range("A" & lastRow).PasteSpecial Paste:=xlPasteValues
