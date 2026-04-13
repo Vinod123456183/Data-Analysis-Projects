@@ -1,0 +1,7 @@
+- Top 5 district state wise 
+- More filtering 
+- swiggy  
+- amazon 
+- uber 
+- delivery address data
+- angellist
