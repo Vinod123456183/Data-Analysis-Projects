@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sentry — Transaction Risk Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #121826;
+    --panel-2: #0e1420;
+    --border: #1e2733;
+    --border-soft: #182130;
+    --text: #e4e9f0;
+    --muted: #7a8699;
+    --muted-2: #4b5563;
+    --cyan: #22d3ee;
+    --cyan-dim: rgba(34, 211, 238, 0.12);
+    --emerald: #34d399;
+    --emerald-dim: rgba(52, 211, 153, 0.12);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245, 158, 11, 0.12);
+    --red: #f43f5e;
+    --red-dim: rgba(244, 63, 94, 0.14);
+    --ease: cubic-bezier(.4,0,.2,1);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; padding: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 12% -5%, rgba(34,211,238,0.07), transparent 38%),
+      radial-gradient(circle at 90% 105%, rgba(52,211,153,0.06), transparent 42%);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  a { color: inherit; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    background: rgba(10, 14, 20, 0.82);
+    backdrop-filter: blur(10px);
+    position: sticky; top: 0; z-index: 20;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--cyan), var(--emerald));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #05070a; font-size: 15px;
+    box-shadow: 0 0 22px rgba(34,211,238,0.25);
+  }
+  .brand-name { font-weight: 700; font-size: 15px; letter-spacing: 0.02em; }
+  .brand-sub { color: var(--muted); font-size: 11.5px; }
+
+  .topbar-right { display: flex; align-items: center; gap: 10px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+    font-size: 12px; color: var(--muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--emerald); box-shadow: 0 0 8px var(--emerald); animation: pulse-dot 2s ease-in-out infinite; }
+  .dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
+  @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  .model-badge {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--cyan-dim); border: 1px solid rgba(34,211,238,0.25);
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--cyan);
+  }
+
+  /* ---------- Layout ---------- */
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  .hero { margin-bottom: 30px; opacity: 0; animation: fade-up .6s var(--ease) forwards; }
+  @keyframes fade-up { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em;
+    color: var(--cyan); text-transform: uppercase; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .eyebrow::before { content: ''; width: 16px; height: 1px; background: var(--cyan); display: inline-block; }
+  h1 { font-size: clamp(26px, 4vw, 36px); margin: 0 0 8px; font-weight: 800; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); max-width: 660px; line-height: 1.6; font-size: 15px; }
+
+  /* ---------- KPI strip ---------- */
+  .kpi-strip {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px;
+    opacity: 0; animation: fade-up .6s var(--ease) .08s forwards;
+  }
+  @media (max-width: 760px) { .kpi-strip { grid-template-columns: repeat(2, 1fr); } }
+  .kpi {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+    transition: border-color .2s ease, transform .2s ease;
+  }
+  .kpi:hover { border-color: rgba(34,211,238,0.3); transform: translateY(-2px); }
+  .kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-2); margin-bottom: 8px; }
+  .kpi-value { font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 700; }
+  .kpi-value.cyan { color: var(--cyan); }
+  .kpi-value.red { color: var(--red); }
+  .kpi-value.emerald { color: var(--emerald); }
+
+  .grid {
+    display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; align-items: start;
+    opacity: 0; animation: fade-up .6s var(--ease) .16s forwards;
+  }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--border); border-radius: 14px; padding: 22px;
+  }
+
+  .panel-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; gap: 12px; flex-wrap: wrap; }
+  .panel-title h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel-title h2 svg { opacity: 0.7; }
+
+  .tabs { display: flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; }
+  .tab { padding: 6px 13px; font-size: 12px; border-radius: 7px; cursor: pointer; color: var(--muted); font-family: 'IBM Plex Mono', monospace; transition: all .18s ease; user-select: none; }
+  .tab.active { background: var(--cyan-dim); color: var(--cyan); }
+  .tab:not(.active):hover { color: var(--text); }
+
+  /* ---------- Form ---------- */
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .field label { display: block; font-size: 10.5px; color: var(--muted-2); font-family: 'IBM Plex Mono', monospace; margin-bottom: 5px; letter-spacing: 0.02em; }
+  .field input {
+    width: 100%; background: #0b1119; border: 1px solid var(--border); border-radius: 7px;
+    padding: 8px 9px; color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .field input:focus, button:focus-visible, .tab:focus-visible, .dropzone:focus-visible {
+    outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-dim);
+  }
+  .field input.key-field { border-color: rgba(34,211,238,0.22); }
+
+  .primary-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 12px; margin-bottom: 18px; }
+  .primary-fields .field label { font-size: 11.5px; color: var(--muted); }
+  .primary-fields .field input { padding: 11px 12px; font-size: 14px; }
+
+  .btn {
+    appearance: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif;
+    font-weight: 700; font-size: 14px; border-radius: 9px; padding: 12px 20px;
+    display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+    transition: transform .12s ease, opacity .15s ease, box-shadow .2s ease;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: linear-gradient(135deg, var(--cyan), #0ea5c9); color: #04141a; width: 100%; box-shadow: 0 4px 20px rgba(34,211,238,0.18); }
+  .btn-primary:hover:not(:disabled) { box-shadow: 0 4px 26px rgba(34,211,238,0.32); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: 12px; padding: 8px 14px; }
+  .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+  .spinner { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(4,20,26,0.3); border-top-color: #04141a; animation: spin .7s linear infinite; display: none; }
+  .btn-primary.loading .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .helper-row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; gap: 10px; flex-wrap: wrap; }
+  .helper-text { font-size: 12px; color: var(--muted-2); }
+
+  /* ---------- Upload ---------- */
+  .dropzone {
+    border: 1.5px dashed var(--border); border-radius: 12px; padding: 34px 18px; text-align: center;
+    color: var(--muted); font-size: 13px; cursor: pointer; transition: border-color .15s ease, background .15s ease;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--cyan); background: var(--cyan-dim); }
+  .dropzone svg { margin-bottom: 10px; opacity: 0.7; }
+
+  /* ---------- Gauge ---------- */
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; padding: 6px 0 4px; }
+  .gauge { position: relative; width: 208px; height: 208px; }
+  .gauge svg.ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .gauge-track { fill: none; stroke: var(--border); stroke-width: 11; }
+  .gauge-fill { fill: none; stroke-width: 11; stroke-linecap: round; transition: stroke-dasharray 1s var(--ease), stroke 0.4s ease; filter: drop-shadow(0 0 6px currentColor); }
+  .gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .gauge-value { font-family: 'IBM Plex Mono', monospace; font-size: 32px; font-weight: 700; transition: color .3s ease; }
+  .gauge-label { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
+
+  .verdict-badge {
+    margin-top: 18px; padding: 8px 18px; border-radius: 999px; font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600; font-size: 12.5px; letter-spacing: 0.04em; display: flex; align-items: center; gap: 8px;
+    transition: all .3s ease; opacity: 0; transform: translateY(4px);
+  }
+  .verdict-badge.show { opacity: 1; transform: translateY(0); }
+
+  .scan-line {
+    position: absolute; inset: -3px; border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent, var(--cyan) 6%, transparent 14%);
+    animation: spin-scan 1s linear infinite; opacity: 0;
+  }
+  .scanning .scan-line { opacity: 0.6; }
+  .scanning .gauge-center { animation: soft-pulse 1s ease-in-out infinite; }
+  @keyframes spin-scan { to { transform: rotate(360deg); } }
+  @keyframes soft-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  .meta-list { width: 100%; margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .meta-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 6px 0; color: var(--muted); }
+  .meta-row span:last-child { color: var(--text); font-family: 'IBM Plex Mono', monospace; }
+
+  /* ---------- Analytics row ---------- */
+  .analytics-grid {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; margin-top: 18px;
+    opacity: 0; animation: fade-up .6s var(--ease) .24s forwards;
+  }
+  @media (max-width: 880px) { .analytics-grid { grid-template-columns: 1fr; } }
+  .chart-box { position: relative; height: 190px; }
+  .chart-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted-2); font-size: 12.5px; text-align: center; padding: 0 20px; }
+  #trendSvg { width: 100%; height: 100%; }
+  #trendSvg .grid-line { stroke: var(--border-soft); stroke-width: 1; }
+  #trendSvg .trend-area { fill: url(#trendGradient); }
+  #trendSvg .trend-line { fill: none; stroke: var(--cyan); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #trendSvg .trend-point { stroke: #0a0e14; stroke-width: 1.5; }
+  #trendSvg text { font-family: 'IBM Plex Mono', monospace; font-size: 9px; fill: var(--muted-2); }
+
+  .influence-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px; }
+  .influence-name { width: 42px; flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; color: var(--muted); }
+  .influence-track { flex: 1; height: 7px; background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: 4px; overflow: hidden; }
+  .influence-fill { height: 100%; border-radius: 4px; transition: width .8s var(--ease); width: 0%; }
+  .influence-val { width: 42px; text-align: right; font-family: 'IBM Plex Mono', monospace; color: var(--muted-2); font-size: 11px; }
+  .influence-note { font-size: 11px; color: var(--muted-2); margin-top: 10px; line-height: 1.5; }
+
+  /* ---------- Ledger ---------- */
+  .ledger { margin-top: 20px; opacity: 0; animation: fade-up .6s var(--ease) .3s forwards; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--muted-2); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px; border-bottom: 1px solid var(--border-soft); font-family: 'IBM Plex Mono', monospace; color: var(--text); }
+  tr { transition: background .15s ease; }
+  tr:hover td { background: rgba(255,255,255,0.015); }
+  tr:last-child td { border-bottom: none; }
+  tr.row-in { animation: row-in .4s var(--ease); }
+  @keyframes row-in { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+  .tag { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .tag-fraud { background: var(--red-dim); color: var(--red); }
+  .tag-clean { background: var(--emerald-dim); color: var(--emerald); }
+  .empty-state { color: var(--muted-2); font-size: 12.5px; text-align: center; padding: 30px 0; }
+  .empty-state svg { display: block; margin: 0 auto 10px; opacity: 0.35; }
+
+  footer { text-align: center; color: var(--muted-2); font-size: 12px; margin-top: 44px; }
+  footer a { color: var(--cyan); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .hidden { display: none !important; }
+
+  /* ---------- Toasts ---------- */
+  .toast-stack { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 100; max-width: 340px; }
+  .toast {
+    background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--red);
+    border-radius: 9px; padding: 12px 14px; font-size: 12.5px; color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35); animation: toast-in .3s var(--ease);
+  }
+  .toast.success { border-left-color: var(--emerald); }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+  .toast-title { font-weight: 700; margin-bottom: 2px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; }
+
+  ::-webkit-scrollbar { height: 6px; width: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div>
+        <div class="brand-name">SENTRY</div>
+        <div class="brand-sub">Transaction Risk Console</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="model-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg>
+        XGBoost · PR-AUC 0.82
+      </div>
+      <div class="status-pill">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText" class="mono">checking API…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="hero">
+      <div class="eyebrow">Real-time inference</div>
+      <h1>Credit card fraud risk scoring</h1>
+      <p class="lede">
+        Submit a transaction manually or upload a batch as CSV. Each record is scored by a gradient-boosted
+        ensemble, and returned with a calibrated risk level and an approximate feature-influence breakdown.
+      </p>
+    </div>
+
+    <div class="kpi-strip">
+      <div class="kpi">
+        <div class="kpi-label">Scored this session</div>
+        <div class="kpi-value" id="kpiTotal">0</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Flagged as fraud</div>
+        <div class="kpi-value red" id="kpiFraud">0</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Avg. probability</div>
+        <div class="kpi-value cyan" id="kpiAvg">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Avg. latency</div>
+        <div class="kpi-value emerald" id="kpiLatency">—</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="panel-title">
+          <h2>Transaction input</h2>
+          <div class="tabs">
+            <div class="tab active" data-tab="manual" tabindex="0">Manual</div>
+            <div class="tab" data-tab="batch" tabindex="0">Batch CSV</div>
+          </div>
+        </div>
+
+        <div id="tab-manual">
+          <div class="primary-fields">
+            <div class="field">
+              <label for="in-amount">AMOUNT ($)</label>
+              <input id="in-amount" type="number" step="0.01" value="0.00" />
+            </div>
+            <div class="field">
+              <label for="in-time">TIME (sec)</label>
+              <input id="in-time" type="number" step="1" value="406" />
+            </div>
+            <div class="field" style="display:flex; align-items:flex-end; gap:8px;">
+              <button class="btn btn-ghost" id="fillSampleBtn" type="button">Load fraud sample</button>
+              <button class="btn btn-ghost" id="fillNormalBtn" type="button">Load normal sample</button>
+            </div>
+          </div>
+
+          <div class="helper-text" style="margin-bottom:8px;">
+            PCA components (V1–V28) · <span style="color:var(--cyan)">highlighted</span> fields carry the most model weight
+          </div>
+          <div class="field-grid" id="vFieldsGrid"></div>
+
+          <button class="btn btn-primary" id="predictBtn" type="button">
+            <span class="spinner"></span>
+            <span class="btn-label">Analyze transaction</span>
+          </button>
+          <div class="helper-row">
+            <span class="helper-text">Model: XGBoost · threshold auto-applied server-side</span>
+          </div>
+        </div>
+
+        <div id="tab-batch" class="hidden">
+          <div class="dropzone" id="dropzone" tabindex="0">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#7a8699" stroke-width="1.6"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            <div><strong style="color:#c7d0dc">Click to upload</strong> or drag a CSV here</div>
+            <div style="margin-top:4px; color:#4b5563;">Columns: Time, V1–V28, Amount</div>
+          </div>
+          <input type="file" id="fileInput" accept=".csv" class="hidden" />
+          <div id="batchStatus" class="helper-text" style="margin-top:12px;"></div>
+          <button class="btn btn-primary" id="batchPredictBtn" type="button" style="margin-top:14px; display:none;">
+            <span class="spinner"></span>
+            <span class="btn-label">Score all rows</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title"><h2>Risk assessment</h2></div>
+        <div class="gauge-wrap">
+          <div class="gauge" id="gaugeEl">
+            <div class="scan-line" id="scanLine"></div>
+            <svg class="ring" viewBox="0 0 100 100">
+              <circle class="gauge-track" cx="50" cy="50" r="42"></circle>
+              <circle class="gauge-fill" id="gaugeFill" cx="50" cy="50" r="42" stroke="#22d3ee" stroke-dasharray="0 264"></circle>
+            </svg>
+            <div class="gauge-center">
+              <div class="gauge-value" id="gaugeValue">—</div>
+              <div class="gauge-label">fraud probability</div>
+            </div>
+          </div>
+          <div class="verdict-badge" id="verdictBadge">AWAITING INPUT</div>
+
+          <div class="meta-list" id="metaList">
+            <div class="meta-row"><span>Threshold used</span><span>—</span></div>
+            <div class="meta-row"><span>Risk level</span><span>—</span></div>
+            <div class="meta-row"><span>Latency</span><span>—</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="analytics-grid">
+      <div class="panel">
+        <div class="panel-title">
+          <h2>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 8l-5 5-4-4-4 4"/></svg>
+            Session probability trend
+          </h2>
+        </div>
+        <div class="chart-box">
+          <svg id="trendSvg" viewBox="0 0 400 160" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g id="trendGridLines"></g>
+            <path id="trendArea" class="trend-area"></path>
+            <path id="trendLine" class="trend-line"></path>
+            <g id="trendPoints"></g>
+          </svg>
+          <div class="chart-empty" id="trendEmpty">Run a prediction to start plotting the trend.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">
+          <h2>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/></svg>
+            Top feature influence
+          </h2>
+        </div>
+        <div id="influenceBody">
+          <div class="chart-empty" style="position:static; padding: 30px 0;">Run a prediction to see which inputs drove it.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel ledger">
+      <div class="panel-title">
+        <h2>Session history</h2>
+        <button class="btn-ghost btn" id="clearLogBtn" type="button" style="padding:6px 12px;">Clear</button>
+      </div>
+      <div id="ledgerBody">
+        <div class="empty-state">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>
+          No transactions scored yet this session.
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Sentry Risk Console · XGBoost model, PR-AUC 0.82 · demo interface for a portfolio ML project, not for production fraud decisions.
+    </footer>
+  </div>
+
+  <div class="toast-stack" id="toastStack"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // =========================================================================
+  // Config
+  // =========================================================================
+  var API_BASE = "https://fraud-detector-api-elda.onrender.com";
+
+  // Approximate training-time feature importance (from RF/XGB analysis).
+  // Used only to visualize *relative influence* of inputs on this page —
+  // not a per-prediction SHAP explanation.
+  var FEATURE_WEIGHTS = {
+    V14: 0.176, V10: 0.124, V12: 0.106, V4: 0.101, V17: 0.095,
+    V16: 0.061, V3: 0.058, V11: 0.053, V2: 0.029, V7: 0.020
+  };
+  var KEY_FEATURES = {};
+  Object.keys(FEATURE_WEIGHTS).forEach(function (k) { KEY_FEATURES[k] = true; });
+
+  // =========================================================================
+  // Build V1..V28 input fields
+  // =========================================================================
+  var vGrid = document.getElementById('vFieldsGrid');
+  for (var i = 1; i <= 28; i++) {
+    var name = 'V' + i;
+    var div = document.createElement('div');
+    div.className = 'field';
+    var keyClass = KEY_FEATURES[name] ? 'key-field' : '';
+    div.innerHTML = '<label for="in-v' + i + '">' + name + '</label><input id="in-v' + i + '" class="' + keyClass + '" type="number" step="0.0001" value="0" />';
+    vGrid.appendChild(div);
+  }
+
+  var FRAUD_SAMPLE = {
+    Time: 406, Amount: 0,
+    V1: -2.3122, V2: 1.9519, V3: -1.6098, V4: 3.9979, V5: -0.5222, V6: -1.4265,
+    V7: -2.5373, V8: 1.3917, V9: -2.7700, V10: -2.7722, V11: 3.2020, V12: -2.8999,
+    V13: -0.5952, V14: -4.2892, V15: 0.3898, V16: -1.1407, V17: -2.8300, V18: -0.0168,
+    V19: 0.4169, V20: 0.1269, V21: 0.5172, V22: -0.0350, V23: -0.4652, V24: 0.3202,
+    V25: 0.0445, V26: 0.1780, V27: 0.2611, V28: -0.1433
+  };
+  var NORMAL_SAMPLE = {
+    Time: 50000, Amount: 25.50,
+    V1: -0.5, V2: 0.3, V3: 1.2, V4: 0.1, V5: -0.2, V6: 0.4, V7: -0.1, V8: 0.05,
+    V9: 0.15, V10: -0.1, V11: 0.2, V12: 0.1, V13: -0.05, V14: 0.3, V15: -0.15, V16: 0.1,
+    V17: -0.1, V18: 0.05, V19: -0.05, V20: 0.02, V21: -0.03, V22: 0.01, V23: 0.02, V24: -0.01,
+    V25: 0.03, V26: -0.02, V27: 0.01, V28: 0.005
+  };
+
+  function fillForm(sample) {
+    document.getElementById('in-amount').value = sample.Amount;
+    document.getElementById('in-time').value = sample.Time;
+    for (var i = 1; i <= 28; i++) document.getElementById('in-v' + i).value = sample['V' + i];
+  }
+  document.getElementById('fillSampleBtn').addEventListener('click', function () { fillForm(FRAUD_SAMPLE); });
+  document.getElementById('fillNormalBtn').addEventListener('click', function () { fillForm(NORMAL_SAMPLE); });
+
+  // =========================================================================
+  // Tabs
+  // =========================================================================
+  var tabs = document.querySelectorAll('.tab');
+  for (var t = 0; t < tabs.length; t++) {
+    (function (tab) {
+      function activate() {
+        for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
+        tab.classList.add('active');
+        var which = tab.getAttribute('data-tab');
+        document.getElementById('tab-manual').classList.toggle('hidden', which !== 'manual');
+        document.getElementById('tab-batch').classList.toggle('hidden', which !== 'batch');
+      }
+      tab.addEventListener('click', activate);
+      tab.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+    })(tabs[t]);
+  }
+
+  // =========================================================================
+  // Toasts
+  // =========================================================================
+  function showToast(title, message, type) {
+    var stack = document.getElementById('toastStack');
+    var el = document.createElement('div');
+    el.className = 'toast' + (type === 'success' ? ' success' : '');
+    el.innerHTML = '<div class="toast-title">' + title + '</div><div>' + message + '</div>';
+    stack.appendChild(el);
+    setTimeout(function () {
+      el.style.opacity = '0';
+      el.style.transition = 'opacity .3s ease';
+      setTimeout(function () { el.remove(); }, 300);
+    }, 5000);
+  }
+
+  // =========================================================================
+  // API health check
+  // =========================================================================
+  function checkHealth() {
+    var dot = document.getElementById('statusDot');
+    var text = document.getElementById('statusText');
+    fetch(API_BASE + '/health')
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.model_loaded) { dot.classList.remove('offline'); text.textContent = 'api online'; }
+        else { dot.classList.add('offline'); text.textContent = 'model not loaded'; }
+      })
+      .catch(function () {
+        dot.classList.add('offline'); text.textContent = 'api offline';
+      });
+  }
+  checkHealth();
+  setInterval(checkHealth, 15000);
+
+  // =========================================================================
+  // Gauge rendering with animated count-up
+  // =========================================================================
+  var CIRC = 2 * Math.PI * 42;
+
+  function riskColor(pct, threshold) {
+    if (pct >= 0.75) return '#f43f5e';
+    if (pct >= 0.4) return '#f59e0b';
+    if (pct >= threshold) return '#f59e0b';
+    return '#34d399';
+  }
+
+  function animateValue(el, from, to, duration, colorFn) {
+    var start = null;
+    function tick(ts) {
+      if (start === null) start = ts;
+      var t = Math.min(1, (ts - start) / duration);
+      var eased = 1 - Math.pow(1 - t, 3);
+      var current = from + (to - from) * eased;
+      el.textContent = (current * 100).toFixed(2) + '%';
+      if (colorFn) el.style.color = colorFn(current);
+      if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var lastGaugeValue = 0;
+  function renderGauge(prob, riskLevel, threshold, latencyMs) {
+    var fill = document.getElementById('gaugeFill');
+    var value = document.getElementById('gaugeValue');
+    var badge = document.getElementById('verdictBadge');
+    var meta = document.getElementById('metaList');
+
+    var pct = Math.max(0, Math.min(1, prob));
+    fill.setAttribute('stroke-dasharray', (pct * CIRC) + ' ' + CIRC);
+    var color = riskColor(pct, threshold);
+    fill.setAttribute('stroke', color);
+
+    animateValue(value, lastGaugeValue, pct, 700, function (v) { return riskColor(v, threshold); });
+    lastGaugeValue = pct;
+
+    var badgeBg, badgeText, label;
+    if (pct >= 0.75) { badgeBg = 'var(--red-dim)'; badgeText = '#f43f5e'; label = 'HIGH RISK — LIKELY FRAUD'; }
+    else if (pct >= 0.4) { badgeBg = 'var(--amber-dim)'; badgeText = '#f59e0b'; label = 'MEDIUM RISK — REVIEW'; }
+    else if (pct >= threshold) { badgeBg = 'var(--amber-dim)'; badgeText = '#f59e0b'; label = 'ELEVATED — FLAGGED'; }
+    else { badgeBg = 'var(--emerald-dim)'; badgeText = '#34d399'; label = 'LOW RISK — CLEAN'; }
+
+    badge.style.background = badgeBg;
+    badge.style.color = badgeText;
+    badge.textContent = label;
+    badge.classList.add('show');
+
+    meta.innerHTML =
+      '<div class="meta-row"><span>Threshold used</span><span>' + threshold.toFixed(3) + '</span></div>' +
+      '<div class="meta-row"><span>Risk level</span><span>' + riskLevel + '</span></div>' +
+      '<div class="meta-row"><span>Latency</span><span>' + latencyMs + ' ms</span></div>';
+  }
+
+  function setScanning(on) { document.getElementById('gaugeEl').classList.toggle('scanning', on); }
+
+  // =========================================================================
+  // Feature influence panel
+  // =========================================================================
+  function renderInfluence(payload) {
+    var body = document.getElementById('influenceBody');
+    var names = Object.keys(FEATURE_WEIGHTS);
+    var scored = names.map(function (name) {
+      var val = payload[name] || 0;
+      return { name: name, score: FEATURE_WEIGHTS[name] * Math.abs(val) };
+    }).sort(function (a, b) { return b.score - a.score; }).slice(0, 6);
+
+    var max = Math.max.apply(null, scored.map(function (s) { return s.score; }).concat([0.0001]));
+    var html = scored.map(function (s) {
+      var pct = (s.score / max) * 100;
+      var color = pct > 60 ? '#f43f5e' : pct > 30 ? '#f59e0b' : '#22d3ee';
+      return '<div class="influence-row">' +
+        '<span class="influence-name">' + s.name + '</span>' +
+        '<span class="influence-track"><span class="influence-fill" style="width:' + pct + '%; background:' + color + ';"></span></span>' +
+        '<span class="influence-val">' + s.score.toFixed(2) + '</span>' +
+        '</div>';
+    }).join('');
+    html += '<div class="influence-note">Relative influence = training-time feature importance × input magnitude for this transaction. Not a per-prediction SHAP explanation.</div>';
+    body.innerHTML = html;
+  }
+
+  // =========================================================================
+  // Session trend chart — pure SVG, no external library
+  // =========================================================================
+  var trendValues = [];
+  var trendColors = [];
+  var CHART_W = 400, CHART_H = 160, PAD = 10;
+
+  function renderTrendChart() {
+    var empty = document.getElementById('trendEmpty');
+    if (trendValues.length === 0) { empty.style.display = 'flex'; return; }
+    empty.style.display = 'none';
+
+    var n = trendValues.length;
+    var stepX = n > 1 ? (CHART_W - PAD * 2) / (n - 1) : 0;
+
+    function xAt(idx) { return n > 1 ? PAD + idx * stepX : CHART_W / 2; }
+    function yAt(v) { return PAD + (1 - v) * (CHART_H - PAD * 2); }
+
+    var linePoints = trendValues.map(function (v, idx) { return xAt(idx) + ',' + yAt(v); });
+    var lineD = 'M' + linePoints.join(' L');
+    var areaD = lineD + ' L' + xAt(n - 1) + ',' + (CHART_H - PAD) + ' L' + xAt(0) + ',' + (CHART_H - PAD) + ' Z';
+
+    document.getElementById('trendLine').setAttribute('d', n > 1 ? lineD : '');
+    document.getElementById('trendArea').setAttribute('d', n > 1 ? areaD : '');
+
+    // grid lines at 0%, 25%, 50%, 75%, 100%
+    var gridGroup = document.getElementById('trendGridLines');
+    var gridHtml = '';
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (frac) {
+      var y = PAD + frac * (CHART_H - PAD * 2);
+      gridHtml += '<line class="grid-line" x1="' + PAD + '" y1="' + y + '" x2="' + (CHART_W - PAD) + '" y2="' + y + '"></line>';
+    });
+    gridGroup.innerHTML = gridHtml;
+
+    var pointsGroup = document.getElementById('trendPoints');
+    var pointsHtml = '';
+    trendValues.forEach(function (v, idx) {
+      pointsHtml += '<circle class="trend-point" cx="' + xAt(idx) + '" cy="' + yAt(v) + '" r="3.2" fill="' + trendColors[idx] + '"><title>' + (v * 100).toFixed(1) + '%</title></circle>';
+    });
+    pointsGroup.innerHTML = pointsHtml;
+  }
+
+  function pushTrend(prob, threshold) {
+    trendValues.push(Math.max(0, Math.min(1, prob)));
+    trendColors.push(riskColor(prob, threshold));
+    if (trendValues.length > 25) { trendValues.shift(); trendColors.shift(); }
+    renderTrendChart();
+  }
+
+  function resetTrend() {
+    trendValues = []; trendColors = [];
+    renderTrendChart();
+  }
+
+  // =========================================================================
+  // KPIs
+  // =========================================================================
+  var stats = { total: 0, fraud: 0, probSum: 0, latencySum: 0 };
+  function updateKpis() {
+    document.getElementById('kpiTotal').textContent = stats.total;
+    document.getElementById('kpiFraud').textContent = stats.fraud;
+    document.getElementById('kpiAvg').textContent = stats.total ? ((stats.probSum / stats.total) * 100).toFixed(1) + '%' : '—';
+    document.getElementById('kpiLatency').textContent = stats.total ? Math.round(stats.latencySum / stats.total) + 'ms' : '—';
+  }
+
+  // =========================================================================
+  // Ledger
+  // =========================================================================
+  var ledgerRows = [];
+  function pushLedger(prob, isFraud, amount) {
+    ledgerRows.unshift({ time: new Date().toLocaleTimeString(), prob: prob, isFraud: isFraud, amount: amount });
+    renderLedger();
+  }
+  function renderLedger() {
+    var body = document.getElementById('ledgerBody');
+    if (ledgerRows.length === 0) {
+      body.innerHTML = '<div class="empty-state">' +
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#4b5563" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>' +
+        'No transactions scored yet this session.</div>';
+      return;
+    }
+    var rows = ledgerRows.slice(0, 12).map(function (r, idx) {
+      return '<tr class="' + (idx === 0 ? 'row-in' : '') + '">' +
+        '<td>' + r.time + '</td>' +
+        '<td>$' + Number(r.amount).toFixed(2) + '</td>' +
+        '<td>' + (r.prob * 100).toFixed(2) + '%</td>' +
+        '<td><span class="tag ' + (r.isFraud ? 'tag-fraud">FRAUD' : 'tag-clean">CLEAN') + '</span></td>' +
+        '</tr>';
+    }).join('');
+    body.innerHTML = '<table><thead><tr><th>Time</th><th>Amount</th><th>Probability</th><th>Verdict</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  document.getElementById('clearLogBtn').addEventListener('click', function () {
+    ledgerRows = [];
+    renderLedger();
+    resetTrend();
+    stats = { total: 0, fraud: 0, probSum: 0, latencySum: 0 };
+    updateKpis();
+  });
+
+  // =========================================================================
+  // Manual predict
+  // =========================================================================
+  function collectManualPayload() {
+    var payload = {
+      Time: parseFloat(document.getElementById('in-time').value || 0),
+      Amount: parseFloat(document.getElementById('in-amount').value || 0)
+    };
+    for (var i = 1; i <= 28; i++) payload['V' + i] = parseFloat(document.getElementById('in-v' + i).value || 0);
+    return payload;
+  }
+
+  function setBtnLoading(btn, on) {
+    btn.disabled = on;
+    btn.classList.toggle('loading', on);
+  }
+
+  document.getElementById('predictBtn').addEventListener('click', function () {
+    var btn = document.getElementById('predictBtn');
+    setBtnLoading(btn, true);
+    setScanning(true);
+    var payload = collectManualPayload();
+    var start = performance.now();
+
+    fetch(API_BASE + '/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('API error ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        var latency = Math.round(performance.now() - start);
+        renderGauge(data.fraud_probability, data.risk_level, data.threshold_used, latency);
+        renderInfluence(payload);
+        pushTrend(data.fraud_probability, data.threshold_used);
+        pushLedger(data.fraud_probability, data.is_fraud, payload.Amount);
+
+        stats.total++;
+        if (data.is_fraud) stats.fraud++;
+        stats.probSum += data.fraud_probability;
+        stats.latencySum += latency;
+        updateKpis();
+      })
+      .catch(function (err) {
+        showToast('Prediction failed', err.message + '. Make sure the backend is running at ' + API_BASE + '.');
+      })
+      .finally(function () {
+        setBtnLoading(btn, false);
+        setScanning(false);
+      });
+  });
+
+  // =========================================================================
+  // Batch CSV upload
+  // =========================================================================
+  var dropzone = document.getElementById('dropzone');
+  var fileInput = document.getElementById('fileInput');
+  var batchStatus = document.getElementById('batchStatus');
+  var batchBtn = document.getElementById('batchPredictBtn');
+  var parsedRows = [];
+
+  dropzone.addEventListener('click', function () { fileInput.click(); });
+  dropzone.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+  dropzone.addEventListener('dragover', function (e) { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', function () { dropzone.classList.remove('drag'); });
+  dropzone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', function (e) { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+  function handleFile(file) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var text = e.target.result;
+      var lines = text.trim().split('\n');
+      var headers = lines[0].split(',').map(function (h) { return h.trim(); });
+      parsedRows = lines.slice(1).map(function (line) {
+        var values = line.split(',');
+        var obj = {};
+        headers.forEach(function (h, idx) { obj[h] = parseFloat(values[idx]); });
+        return obj;
+      });
+      batchStatus.textContent = 'Loaded ' + parsedRows.length + ' rows from ' + file.name;
+      batchBtn.style.display = 'inline-flex';
+    };
+    reader.readAsText(file);
+  }
+
+  batchBtn.addEventListener('click', function () {
+    setBtnLoading(batchBtn, true);
+    batchStatus.textContent = 'Scoring batch…';
+
+    fetch(API_BASE + '/predict/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsedRows)
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('API error ' + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        batchStatus.textContent = 'Done: ' + data.fraud_count + ' flagged out of ' + data.total_count + ' transactions.';
+        showToast('Batch scored', data.fraud_count + ' of ' + data.total_count + ' transactions flagged.', 'success');
+
+        data.predictions.forEach(function (p, idx) {
+          var amt = (parsedRows[idx] && parsedRows[idx].Amount) || 0;
+          pushLedger(p.fraud_probability, p.is_fraud, amt);
+          pushTrend(p.fraud_probability, p.threshold_used);
+          stats.total++;
+          if (p.is_fraud) stats.fraud++;
+          stats.probSum += p.fraud_probability;
+        });
+        updateKpis();
+
+        if (data.predictions.length) {
+          var last = data.predictions[data.predictions.length - 1];
+          renderGauge(last.fraud_probability, last.risk_level, last.threshold_used, 0);
+          renderInfluence(parsedRows[parsedRows.length - 1]);
+        }
+      })
+      .catch(function (err) {
+        batchStatus.textContent = 'Failed: ' + err.message;
+        showToast('Batch scoring failed', err.message);
+      })
+      .finally(function () {
+        setBtnLoading(batchBtn, false);
+      });
+  });
+
+  // Initial empty chart render
+  renderTrendChart();
+
+})();
+</script>
+</body>
+</html>
